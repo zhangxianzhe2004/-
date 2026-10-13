@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.pth
+# 模型权重
+*.bin
+*.safetensors
+# 日志
+logs/
+# IDE
+.vscode/
+.venv/
+node_modules/
+logs/
+data/
+__pycache__/
+*.pyc
+dist/
+.env

@@ -1,0 +1,45 @@
+# ================= 超市商品多模态检索系统 - Python 依赖 =================
+# Python 版本要求：3.9 ~ 3.11（推荐 3.10）
+
+# ---- Web 框架 ----
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9        # 文件上传支持
+
+# ---- 数据校验 ----
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# ---- MySQL ----
+pymysql==1.1.0                # MySQL 驱动
+sqlalchemy==2.0.27            # ORM
+cryptography==42.0.4          # SQLAlchemy 鉴权依赖
+
+# ---- Redis ----
+redis==5.1.0
+celery[redis]==5.3.4          # 异步任务队列
+
+# ---- 向量与模型 ----
+milvus-lite==2.4.0            # Milvus 本地轻量版
+pymilvus==2.4.0               # Milvus 客户端
+transformers==4.38.2          # HuggingFace 模型加载（BGE / CLIP）
+torch==2.2.0                  # 深度学习框架
+# open_clip_torch==2.24.0    # 中文 CLIP 可选（如需更优图像模型可启用）
+pillow==10.2.0                # 图片处理
+
+# ---- 对象存储 MinIO ----
+minio==7.2.5
+
+# ---- 文件解析 ----
+pandas==2.2.0
+openpyxl==3.1.2               # Excel 读写
+xlrd==2.0.1                   # 旧版 xls 读取（可选）
+
+# ---- 鉴权 ----
+python-jose[cryptography]==3.3.0  # JWT
+passlib[bcrypt]==1.7.4            # 密码哈希
+
+# ---- 工具 ----
+python-dotenv==1.0.1
+loguru==0.7.2                 # 日志
+tqdm==4.66.1

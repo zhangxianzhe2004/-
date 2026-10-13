@@ -1,0 +1,497 @@
+================================================================================
+  超市商品多模态检索系统 - 项目运行操作手册（run_guide.txt）
+================================================================================
+
+本手册包含完整分步操作，按顺序执行即可启动整个系统。
+前置条件：已按 env_setup.txt 完成所有中间件安装和 Python 依赖安装。
+
+启动顺序总览：
+  ① 初始化 MySQL 建表 → ② 启动 Redis → ③ 启动 MinIO
+  → ④ 启动 Celery 异步任务 → ⑤ 启动 FastAPI 后端
+  → ⑥ 启动 Vue 前端 → ⑦ 后台批量导入 → ⑧ 多模态检索测试
+
+
+================================================================================
+  第一步：初始化 MySQL，执行建表 SQL
+================================================================================
+
+1. 确保 MySQL 服务已启动：
+   Linux:   sudo service mysql start
+   Windows: net start MySQL80
+
+2. 执行建表脚本（创建数据库 goods_search 及全部表）：
+   mysql -u root -p123456 < backend/sql/init.sql
+
+   或登录 MySQL 后手动执行：
+   mysql -u root -p123456
+   mysql> source /完整路径/backend/sql/init.sql;
+   mysql> exit;
+
+   说明：后端启动时也会通过 SQLAlchemy 自动建表（init_db()），
+         但执行 init.sql 可保证表结构完整、含索引和默认用户。
+
+3. 验证表创建成功：
+   mysql -u root -p123456 -e "USE goods_search; SHOW TABLES;"
+   应输出：
+     goods
+     goods_import_task
+     sys_user
+     search_log
+
+   验证默认用户：
+   mysql -u root -p123456 -e "SELECT username,role FROM goods_search.sys_user;"
+   应输出：
+     admin     admin
+     operator  operator
+     staff     staff
+
+   注意：init.sql 中的密码哈希为占位值，后端首次启动会自动用真实 bcrypt 哈希覆盖。
+
+
+================================================================================
+  第二步：启动 Redis
+================================================================================
+
+1. 启动 Redis 服务：
+   Linux:   sudo service redis-server start
+   Windows: （Memurai/Docker 服务自启，或手动启动）
+
+2. 验证：
+   redis-cli ping
+   应输出：PONG
+
+   如需指定密码，修改 backend/.env 的 REDIS_PASSWORD。
+
+
+================================================================================
+  第三步：启动 MinIO
+================================================================================
+
+1. 启动 MinIO（需保持终端运行，或作为后台服务）：
+   Linux:
+     export MINIO_ROOT_USER=minioadmin
+     export MINIO_ROOT_PASSWORD=minioadmin
+     minio server /data/minio --console-address ":9001"
+
+   Windows:
+     set MINIO_ROOT_USER=minioadmin
+     set MINIO_ROOT_PASSWORD=minioadmin
+     minio.exe server D:\minio\data --console-address ":9001"
+
+   Docker:
+     docker run -d --name minio -p 9000:9000 -p 9001:9001 \
+       -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+       minio/minio server /data --console-address ":9001"
+
+2. 验证：
+   浏览器访问 http://127.0.0.1:9001
+   账号：minioadmin / minioadmin
+   应能看到 MinIO 控制台。
+
+   说明：goods-images bucket 会在后端首次启动时自动创建。
+
+
+================================================================================
+  第四步：启动 Celery 异步任务
+================================================================================
+
+  Celery 负责异步处理大批量商品导入（图片向量化、向量写入），必须启动。
+
+1. 进入后端目录：
+   cd backend
+
+2. 激活虚拟环境（如使用 uv）：
+   source .venv/bin/activate      # Linux
+   .venv\Scripts\activate          # Windows
+
+3. 启动 Celery Worker（单独开一个终端，保持运行）：
+   Linux:
+     celery -A app.tasks.celery_app worker --loglevel=info
+
+   Windows（必须加 --pool=solo）：
+     celery -A app.tasks.celery_app worker --loglevel=info --pool=solo
+
+4. 验证 Worker 已就绪：
+   终端应输出：
+     [tasks]
+       . process_import_file
+       . process_import_api
+       . health_check
+     celery@xxx ready.
+
+5. 可选：健康检查测试
+   python -c "from app.tasks.celery_app import health_check; print(health_check.delay().get(timeout=10))"
+   应输出：celery ok
+
+
+================================================================================
+  第五步：启动 FastAPI 后端服务
+================================================================================
+
+1. 进入后端目录（新开终端）：
+   cd backend
+   source .venv/bin/activate      # Linux
+
+2. 启动后端（开发模式，自动热重载）：
+   uvicorn app.main:app --reload --port 8000
+
+   或直接运行 main.py：
+   python -m app.main
+
+3. 启动成功标志（终端输出）：
+   ==================================================
+     超市商品多模态检索系统 v1.0.0 启动中...
+   ==================================================
+   [启动] MySQL 表初始化完成
+   [启动] 默认用户初始化完成（admin/operator/staff，密码 123456）
+   [启动] Milvus 向量集合初始化完成
+   [启动] MinIO 连接完成
+   INFO:     Uvicorn running on http://0.0.0.0:8000
+
+4. 验证：
+   浏览器访问 http://127.0.0.1:8000
+   应返回 JSON：{"app":"超市商品多模态检索系统","status":"running",...}
+
+   API 文档（Swagger）：
+   http://127.0.0.1:8000/docs
+
+   说明：首次启动会自动下载 CLIP 和 BGE 模型（约 500MB-1GB），
+         如网络慢请设置镜像：export HF_ENDPOINT=https://hf-mirror.com
+
+
+================================================================================
+  第六步：启动 Vue 前端
+================================================================================
+
+1. 进入前端目录（新开终端）：
+   cd frontend
+
+2. 安装依赖（首次执行）：
+   npm install
+   如国内网络慢：
+   npm config set registry https://registry.npmmirror.com
+   npm install
+
+3. 启动开发服务器：
+   npm run dev
+
+4. 启动成功：
+   VITE v5.x  ready in xxx ms
+   ➜  Local:   http://localhost:5173/
+   ➜  Network: http://xxx.xxx.xxx.xxx:5173/
+
+5. 浏览器访问：
+   http://localhost:5173
+
+6. 登录：
+   用户名：admin    密码：123456    （管理员，全部权限）
+   或：operator / staff / 123456
+
+   登录后进入主界面，左侧菜单：
+     - 多模态检索（所有角色可见）
+     - 商品列表（运营/管理员）
+     - 批量导入（运营/管理员）
+     - 任务管理（运营/管理员）
+
+
+================================================================================
+  第七步：访问后台，批量导入商品操作步骤
+================================================================================
+
+  方式一：通过前端页面导入（推荐）
+
+  1. 登录后台（admin 或 operator 账号）
+  2. 左侧菜单点击「批量导入」
+  3. 填写任务名称（可选）
+  4. 点击「选择 Excel/CSV 文件」，上传商品清单
+     - 可点击「下载 Excel 模板」获取模板格式
+     - 模板字段：barcode, goods_name, category, spec, retail_price（必填）
+                 cost_price, shelf_no, stock, supplier, description（选填）
+  5. 点击「选择图片 zip 包」，上传商品图片压缩包
+     - 图片命名规则：{商品条码}.jpg，如 6900000000011.jpg
+     - 系统自动按条码匹配图片和商品行
+     - 如无图片可不传（image_path 会用占位路径）
+  6. 选择「条码冲突策略」：
+     - 跳过：已存在的条码跳过
+     - 覆盖旧数据：删除旧数据重新写入
+     - 整批终止：遇到冲突立即终止整批
+  7. 选择「事务模式」：
+     - 整批原子：任一条失败全部回滚
+     - 部分成功：失败条目记录，成功条目入库，失败可导出修正重跑
+  8. 点击「提交导入任务」
+  9. 左侧菜单点击「任务管理」查看任务进度
+     - 页面每 5 秒自动刷新
+     - 状态：待处理 → 处理中 → 成功/部分成功/失败
+  10. 任务完成后点击「下载报告」获取导入报告 CSV
+
+  方式二：生成测试数据快速体验
+
+  cd backend
+  python -m tests.gen_test_data
+  # 生成 data/test_goods.xlsx 和 data/test_goods_images.zip
+  # 然后在前端批量导入页面上传这两个文件
+
+
+================================================================================
+  第八步：多模态检索测试方法
+================================================================================
+
+  方式一：前端页面测试
+
+  1. 登录后台（任意角色均可）
+  2. 左侧菜单点击「多模态检索」
+  3. 四个 Tab 页：
+
+  【图片检索】
+  - 上传商品照片（拖拽或点击）
+  - 设置返回数量（默认 10）、相似度阈值（默认 0.5）
+  - 点击「开始检索」
+  - 返回相似商品列表，含图片、名称、条码、相似度
+
+  【文本检索】
+  - 输入文字描述，如"红色瓶装可乐"
+  - 点击「开始检索」
+  - 返回文本向量相似的商品
+
+  【条码检索】
+  - 输入商品条码，如 6900000000011
+  - 点击「精确查询」
+  - 毫秒级返回精确匹配商品
+
+  【混合检索】
+  - 同时输入文本和上传图片
+  - 调整图像权重 / 文本权重
+  - 点击「混合检索」
+  - 返回图文加权融合结果
+
+  方式二：运行测试脚本
+
+  # 1. 先导入测试数据（如未执行）
+  cd backend
+  python -m tests.gen_test_data
+  # 在前端批量导入页面上传 test_goods.xlsx + test_goods_images.zip
+
+  # 2. 测试批量导入
+  python -m tests.test_import
+
+  # 3. 测试多模态检索（含响应时间验证）
+  python -m tests.test_search
+
+  测试脚本会输出：
+  - 条码检索结果及耗时
+  - 文本检索结果及耗时
+  - 图片检索结果及耗时
+  - 混合检索结果及耗时
+  - 响应时间是否 < 500ms 达标
+
+
+================================================================================
+  接口测试示例（curl 命令）
+================================================================================
+
+  以下命令在后端启动后可直接执行测试。
+
+  --- 1. 登录获取 Token ---
+  curl -X POST http://127.0.0.1:8000/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"admin","password":"123456"}'
+  # 返回 {"access_token":"...","role":"admin",...}
+  # 后续请求带 Header: Authorization: Bearer <token>
+
+  --- 2. 条码精确检索 ---
+  curl http://127.0.0.1:8000/api/search/barcode/6900000000011 \
+    -H "Authorization: Bearer <TOKEN>"
+
+  --- 3. 文本检索 ---
+  curl -X POST http://127.0.0.1:8000/api/search/text \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"红色瓶装可乐","top_n":5,"threshold":0.5}'
+
+  --- 4. 图片检索 ---
+  curl -X POST http://127.0.0.1:8000/api/search/image \
+    -H "Authorization: Bearer <TOKEN>" \
+    -F "file=@test.jpg" \
+    -F "top_n=5" \
+    -F "threshold=0.5"
+
+  --- 5. 混合检索（图文）---
+  curl -X POST http://127.0.0.1:8000/api/search/hybrid \
+    -H "Authorization: Bearer <TOKEN>" \
+    -F "text_query=可乐" \
+    -F "file=@test.jpg" \
+    -F "top_n=5" \
+    -F "threshold=0.1" \
+    -F "image_weight=0.6" \
+    -F "text_weight=0.4"
+
+  --- 6. 方案A：文件批量导入 ---
+  curl -X POST http://127.0.0.1:8000/api/import/upload \
+    -H "Authorization: Bearer <TOKEN>" \
+    -F "excel_file=@test_goods.xlsx" \
+    -F "image_zip=@test_goods_images.zip" \
+    -F "conflict_strategy=overwrite" \
+    -F "transaction_mode=partial" \
+    -F "task_name=测试导入"
+  # 返回 {"task_id":"...","total":8,"message":"任务已提交..."}
+
+  --- 7. 方案B：API 批量推送 ---
+  curl -X POST http://127.0.0.1:8000/api/import/push \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "items": [
+        {
+          "barcode": "6900000000097",
+          "goods_name": "测试商品",
+          "category": "测试",
+          "spec": "100g",
+          "retail_price": 9.9,
+          "image_base64": "<base64编码的图片字符串>"
+        }
+      ],
+      "conflict_strategy": "overwrite",
+      "transaction_mode": "partial"
+    }'
+
+  --- 8. 查询任务进度 ---
+  curl http://127.0.0.1:8000/api/import/tasks/<TASK_ID> \
+    -H "Authorization: Bearer <TOKEN>"
+
+  --- 9. 下载导入报告 ---
+  curl -o report.csv http://127.0.0.1:8000/api/import/tasks/<TASK_ID>/report \
+    -H "Authorization: Bearer <TOKEN>"
+
+  --- 10. 商品列表 ---
+  curl "http://127.0.0.1:8000/api/goods?page=1&page_size=10" \
+    -H "Authorization: Bearer <TOKEN>"
+
+  --- 11. 下载 Excel 导入模板 ---
+  curl -o template.xlsx http://127.0.0.1:8000/api/import/template \
+    -H "Authorization: Bearer <TOKEN>"
+
+  --- 12. 健康检查 ---
+  curl http://127.0.0.1:8000/
+
+
+================================================================================
+  项目停止步骤
+================================================================================
+
+  按以下顺序安全关闭各服务：
+
+  1. 停止前端：
+     在前端终端按 Ctrl + C
+
+  2. 停止后端：
+     在后端终端按 Ctrl + C
+
+  3. 停止 Celery Worker：
+     在 Celery 终端按 Ctrl + C
+
+  4. 停止 MinIO：
+     在 MinIO 终端按 Ctrl + C
+     或 Docker：docker stop minio
+
+  5. 停止 Redis：
+     Linux:   sudo service redis-server stop
+     Windows: （服务/Docker 自行停止）
+
+  6. 停止 MySQL：
+     Linux:   sudo service mysql stop
+     Windows: net stop MySQL80
+
+  7. 数据保留说明：
+     - MySQL 数据：持久化在 MySQL 数据目录，重启不丢失
+     - MinIO 图片：持久化在 MinIO 数据目录，重启不丢失
+     - Milvus 向量：持久化在 backend/data/milvus_lite.db，重启不丢失
+     - 如需清空全部数据重新开始：
+       mysql -u root -p123456 -e "DROP DATABASE goods_search;"
+       删除 backend/data/ 目录
+       重新执行第一步建表 SQL
+
+
+================================================================================
+  目录结构说明
+================================================================================
+
+  超市商品多模态的检索系统/
+  ├── plan.md                    # 项目规划文档
+  ├── env_setup.txt              # 环境搭建文档
+  ├── run_guide.txt              # 运行操作手册（本文件）
+  ├── requirements.txt           # Python 依赖清单
+  ├── backend/                   # FastAPI 后端
+  │   ├── app/
+  │   │   ├── main.py            # FastAPI 入口
+  │   │   ├── config.py          # 全局配置
+  │   │   ├── database.py         # MySQL 连接
+  │   │   ├── deps.py            # 依赖注入（鉴权）
+  │   │   ├── api/               # API 路由
+  │   │   │   ├── auth.py        # 鉴权
+  │   │   │   ├── goods.py       # 商品 CRUD
+  │   │   │   ├── search.py      # 多模态检索
+  │   │   │   └── import_task.py # 批量导入
+  │   │   ├── models/            # ORM 模型
+  │   │   ├── schemas/           # Pydantic 校验
+  │   │   ├── services/          # 业务服务
+  │   │   │   ├── search_service.py
+  │   │   │   ├── import_service.py
+  │   │   │   ├── vector_service.py
+  │   │   │   ├── storage_service.py
+  │   │   │   └── cache_service.py
+  │   │   ├── tasks/             # Celery 异步任务
+  │   │   │   ├── celery_app.py
+  │   │   │   └── import_tasks.py
+  │   │   └── utils/             # 工具
+  │   │       ├── clip_model.py
+  │   │       ├── excel_parser.py
+  │   │       ├── image_utils.py
+  │   │       └── security.py
+  │   ├── sql/init.sql           # 建表 SQL
+  │   ├── templates/             # Excel 模板
+  │   ├── tests/                 # 测试脚本
+  │   │   ├── gen_test_data.py
+  │   │   ├── test_import.py
+  │   │   └── test_search.py
+  │   └── .env                   # 环境变量配置
+  └── frontend/                  # Vue3 前端
+      ├── src/
+      │   ├── views/
+      │   │   ├── Login.vue
+      │   │   ├── Layout.vue
+      │   │   ├── SearchTest.vue    # 多模态检索
+      │   │   ├── GoodsList.vue     # 商品列表
+      │   │   ├── GoodsEdit.vue    # 商品编辑
+      │   │   ├── ImportTask.vue   # 批量导入
+      │   │   └── TaskList.vue     # 任务管理
+      │   ├── stores/auth.js
+      │   ├── api/index.js
+      │   └── router/index.js
+      ├── package.json
+      └── vite.config.js
+
+
+================================================================================
+  常见运行问题
+================================================================================
+
+  Q1: 后端启动报 ModuleNotFoundError
+  A: 确保在 backend 目录下、虚拟环境已激活，pip install -r requirements.txt 已执行
+
+  Q2: 前端页面空白 / 接口 404
+  A: 确认后端已启动在 8000 端口，前端 vite.config.js 代理 /api 到 8000
+
+  Q3: 批量导入任务一直 pending
+  A: Celery Worker 未启动或连接 Redis 失败，参考第四步
+
+  Q4: 图片检索返回空结果
+  A: 1) 确认已导入商品且生成了向量
+      2) 降低相似度阈值（如 0.1）再试
+      3) 首次检索会加载模型较慢，第二次起会正常
+
+  Q5: 默认密码登录失败
+  A: 删除 sys_user 表记录，重启后端会自动重建默认用户
+
+================================================================================
+  运行操作手册结束
+================================================================================

@@ -1,0 +1,109 @@
+/* ===== 温馨主题全局样式 ===== */
+/* 覆盖 Element Plus 默认色系，统一为暖色调 */
+
+:root {
+  --warm-primary: #e8733a;
+  --warm-primary-light: #f0a060;
+  --warm-primary-dark: #c95d28;
+  --warm-bg: #faf6f2;
+  --warm-sidebar: #3d2f28;
+  --warm-sidebar-active: #e8733a;
+  --warm-sidebar-text: #d4c5b5;
+  --warm-card-shadow: 0 4px 20px rgba(180, 140, 100, 0.12);
+  --warm-border: #f0e6dc;
+  --warm-radius: 10px;
+}
+
+/* 主色调 */
+.el-button--primary {
+  --el-button-bg-color: var(--warm-primary);
+  --el-button-border-color: var(--warm-primary);
+  --el-button-hover-bg-color: var(--warm-primary-light);
+  --el-button-hover-border-color: var(--warm-primary-light);
+  --el-button-active-bg-color: var(--warm-primary-dark);
+  --el-button-active-border-color: var(--warm-primary-dark);
+}
+
+.el-button--primary.is-link {
+  --el-button-text-color: var(--warm-primary);
+}
+
+/* 链接色 */
+.el-link.el-link--primary {
+  --el-link-text-color: var(--warm-primary);
+}
+
+/* 菜单激活色 */
+.el-menu {
+  --el-menu-active-color: var(--warm-primary);
+}
+
+/* 标签页 */
+.el-tabs__item.is-active {
+  color: var(--warm-primary);
+}
+.el-tabs__active-bar {
+  background-color: var(--warm-primary);
+}
+
+/* 分页激活色 */
+.el-pagination.is-background .el-pager li.is-active {
+  background-color: var(--warm-primary);
+}
+
+/* 进度条 */
+.el-progress-bar__inner {
+  background-color: var(--warm-primary) !important;
+}
+
+/* 开关 */
+.el-switch.is-checked .el-switch__core {
+  background-color: var(--warm-primary) !important;
+  border-color: var(--warm-primary) !important;
+}
+
+/* 输入框聚焦 */
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--warm-primary) inset !important;
+}
+
+/* 卡片圆角和阴影 */
+.el-card {
+  border-radius: var(--warm-radius);
+  border: 1px solid var(--warm-border);
+  box-shadow: var(--warm-card-shadow);
+}
+
+/* 表格圆角 */
+.el-table {
+  border-radius: var(--warm-radius);
+  overflow: hidden;
+}
+
+/* 上传区域 */
+.el-upload-dragger {
+  border-color: var(--warm-border);
+  border-radius: var(--warm-radius);
+}
+.el-upload-dragger:hover {
+  border-color: var(--warm-primary);
+}
+
+/* 全局背景 */
+body {
+  background-color: var(--warm-bg);
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--warm-primary-light);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--warm-border);
+}

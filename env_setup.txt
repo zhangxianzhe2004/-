@@ -1,0 +1,400 @@
+================================================================================
+  超市商品多模态检索系统 - 环境搭建文档（env_setup.txt）
+================================================================================
+
+本文件包含：
+  1. Python 版本要求
+  2. 完整 pip 依赖清单（requirements.txt 内容）
+  3. Redis / MySQL / MinIO / Milvus-Lite 本地安装步骤（Windows / Linux）
+  4. 环境变量配置说明
+  5. 中间件启动命令
+  6. 常见环境报错排查方案
+
+
+================================================================================
+  一、Python 版本要求
+================================================================================
+
+  要求：Python 3.9 ~ 3.11（推荐 3.10）
+  原因：
+    - transformers / torch 官方支持 3.9-3.11
+    - milvus-lite 要求 Python 3.8+
+    - FastAPI + Pydantic v2 需要 3.8+
+
+  验证命令：
+    python --version
+    # 应输出：Python 3.10.x
+
+  说明：本项目使用 uv 管理虚拟环境（可选，也可用 venv）：
+    uv venv --python 3.10
+    source .venv/bin/activate      # Linux
+    .venv\Scripts\activate          # Windows
+
+
+================================================================================
+  二、完整 pip 依赖清单（requirements.txt）
+================================================================================
+
+以下内容与项目根目录 requirements.txt 完全一致，可直接复制使用。
+
+----- 开始 requirements.txt -----
+
+# ================= 超市商品多模态检索系统 - Python 依赖 =================
+# Python 版本要求：3.9 ~ 3.11（推荐 3.10）
+
+# ---- Web 框架 ----
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9        # 文件上传支持
+
+# ---- 数据校验 ----
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# ---- MySQL ----
+pymysql==1.1.0                # MySQL 驱动
+sqlalchemy==2.0.27            # ORM
+cryptography==42.0.4          # SQLAlchemy 鉴权依赖
+
+# ---- Redis ----
+redis==5.1.0
+celery[redis]==5.3.4          # 异步任务队列
+
+# ---- 向量与模型 ----
+milvus-lite==2.4.0            # Milvus 本地轻量版
+pymilvus==2.4.0               # Milvus 客户端
+transformers==4.38.2          # HuggingFace 模型加载（BGE / CLIP）
+torch==2.2.0                  # 深度学习框架
+pillow==10.2.0                # 图片处理
+
+# ---- 对象存储 MinIO ----
+minio==7.2.5
+
+# ---- 文件解析 ----
+pandas==2.2.0
+openpyxl==3.1.2               # Excel 读写
+xlrd==2.0.1                   # 旧版 xls 读取（可选）
+
+# ---- 鉴权 ----
+python-jose[cryptography]==3.3.0  # JWT
+passlib[bcrypt]==1.7.4            # 密码哈希
+
+# ---- 工具 ----
+python-dotenv==1.0.1
+loguru==0.7.2                 # 日志
+tqdm==4.66.1
+
+----- 结束 requirements.txt -----
+
+安装命令：
+    pip install -r requirements.txt
+
+如国内网络较慢，可使用清华源加速：
+    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+torch 安装（CPU 版，约 200MB）：
+    pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
+
+
+================================================================================
+  三、中间件本地安装步骤
+================================================================================
+
+----------------------------------------
+  3.1 MySQL 8.0
+----------------------------------------
+
+【Linux（Ubuntu/Debian）】
+  sudo apt update
+  sudo apt install mysql-server -y
+  sudo service mysql start
+  # 设置 root 密码
+  sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '123456';"
+  sudo mysql -e "FLUSH PRIVILEGES;"
+
+【Linux（CentOS/RHEL）】
+  sudo yum install mysql-server -y
+  sudo systemctl start mysqld
+  sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '123456';"
+
+【Windows】
+  1. 下载 MySQL 8.0 安装包：
+     https://dev.mysql.com/downloads/installer/
+  2. 运行安装程序，选择 "Server only" 或 "Custom"
+  3. 配置 root 密码为 123456（或自行修改 .env）
+  4. 安装完成后 MySQL 服务自动启动
+
+  验证：
+    mysql -u root -p123456 -e "SELECT VERSION();"
+    # 应输出 8.0.x
+
+----------------------------------------
+  3.2 Redis
+----------------------------------------
+
+【Linux（Ubuntu/Debian）】
+  sudo apt install redis-server -y
+  sudo service redis-server start
+  # 验证
+  redis-cli ping
+  # 应输出 PONG
+
+【Linux（CentOS/RHEL）】
+  sudo yum install redis -y
+  sudo systemctl start redis
+  redis-cli ping
+
+【Windows】
+  Redis 官方不直接提供 Windows 版，推荐方案：
+  方案1（推荐）：使用 Memurai（Redis 兼容 Windows 版）
+    下载：https://www.memurai.com/get-memurai
+    安装后自动作为服务运行
+  方案2：使用 Docker
+    docker run -d --name redis -p 6379:6379 redis:7
+  方案3：使用 Redis Windows 社区版（已停止更新）
+    下载：https://github.com/microsoftarchive/redis/releases
+    选择 Redis-x64-3.x.msi 安装
+
+  验证：
+    redis-cli ping
+
+----------------------------------------
+  3.3 MinIO 对象存储
+----------------------------------------
+
+【Linux】
+  # 方式1：直接下载二进制
+  wget https://dl.min.io/server/minio/release/linux-amd64/minio
+  chmod +x minio
+  sudo mv minio /usr/local/bin/
+  # 启动（控制台端口 9001）
+  export MINIO_ROOT_USER=minioadmin
+  export MINIO_ROOT_PASSWORD=minioadmin
+  minio server /data/minio --console-address ":9001"
+
+  # 方式2：Docker（推荐）
+  docker run -d --name minio \
+    -p 9000:9000 -p 9001:9001 \
+    -e MINIO_ROOT_USER=minioadmin \
+    -e MINIO_ROOT_PASSWORD=minioadmin \
+    -v /data/minio:/data \
+    minio/minio server /data --console-address ":9001"
+
+【Windows】
+  1. 下载 MinIO 可执行文件：
+     https://dl.min.io/server/minio/release/windows-amd64/minio.exe
+  2. 放到任意目录（如 D:\minio\）
+  3. 打开 CMD，设置环境变量并启动：
+     set MINIO_ROOT_USER=minioadmin
+     set MINIO_ROOT_PASSWORD=minioadmin
+     minio.exe server D:\minio\data --console-address ":9001"
+
+  验证：
+    浏览器访问 http://127.0.0.1:9000 （API）
+    浏览器访问 http://127.0.0.1:9001 （管理控制台）
+    默认账号：minioadmin / minioadmin
+
+  说明：项目启动后端时会自动创建 bucket "goods-images"，无需手动创建。
+
+----------------------------------------
+  3.4 Milvus-Lite（本地轻量版，无需独立服务）
+----------------------------------------
+
+  本项目使用 Milvus-Lite，通过 pip 安装即可，无需单独部署服务进程。
+  向量数据存储在本地文件 ./data/milvus_lite.db 中。
+
+  安装：
+    pip install milvus-lite==2.4.0 pymilvus==2.4.0
+
+  说明：
+    - Milvus-Lite 仅支持 Linux / macOS / WSL2。
+      原生 Windows 暂不支持，Windows 用户请使用 WSL2 或 Docker 版 Milvus。
+    - 如使用 Docker 版完整 Milvus：
+      docker run -d --name milvus -p 19530:19530 milvusdb/milvus:latest
+      并将 .env 中 MILVUS_URI 改为 http://127.0.0.1:19530
+
+  验证（Python 中执行）：
+    from pymilvus import MilvusClient
+    c = MilvusClient(uri="./data/milvus_lite.db")
+    print(c.list_collections())
+
+
+================================================================================
+  四、环境变量配置说明
+================================================================================
+
+后端配置文件位于 backend/.env，已提供默认值，按实际环境修改：
+
+# ---------- 应用配置 ----------
+DEBUG=true                      # 调试模式，打印 SQL
+API_PREFIX=/api                 # 接口前缀
+
+# ---------- MySQL ----------
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=123456           # 改为你的 MySQL root 密码
+MYSQL_DATABASE=goods_search     # 数据库名（启动后端自动创建表，但库需先建）
+
+# ---------- Redis ----------
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=                 # 无密码留空
+
+# ---------- Celery ----------
+CELERY_BROKER=redis://127.0.0.1:6379/1
+CELERY_BACKEND=redis://127.0.0.1:6379/2
+
+# ---------- MinIO ----------
+MINIO_ENDPOINT=127.0.0.1:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=goods-images       # 启动自动创建
+MINIO_SECURE=false              # 本地用 http，生产用 true
+
+# ---------- Milvus ----------
+MILVUS_URI=./data/milvus_lite.db   # Milvus-Lite 本地文件路径
+MILVUS_DIM=512                     # CLIP 图像向量维度
+MILVUS_TEXT_DIM=512                # BGE 文本向量维度
+
+# ---------- 模型 ----------
+CLIP_MODEL_NAME=OFA-Sys/chinese-clip-vit-base-patch16
+BGE_MODEL_NAME=BAAI/bge-small-zh-v1.5
+MODEL_DEVICE=cpu                   # 有 GPU 改为 cuda
+
+# ---------- 鉴权 ----------
+JWT_SECRET_KEY=goods-search-secret-key-please-change-in-prod  # 生产环境务必修改
+
+
+================================================================================
+  五、中间件启动命令汇总
+================================================================================
+
+启动顺序：MySQL → Redis → MinIO → （Milvus-Lite 无需启动）→ 后端 → 前端
+
+【MySQL】
+  Linux:   sudo service mysql start
+  Windows: net start MySQL80        （服务名视版本而定，或通过"服务"面板启动）
+
+【Redis】
+  Linux:   sudo service redis-server start
+  Windows: （Memurai 或 Docker 启动的服务自启）
+
+【MinIO】
+  Linux:   minio server /data/minio --console-address ":9001"
+  Docker:  docker start minio
+  Windows: minio.exe server D:\minio\data --console-address ":9001"
+
+【后端 FastAPI】
+  cd backend
+  uvicorn app.main:app --reload --port 8000
+
+【Celery Worker（异步任务，单独开终端）】
+  cd backend
+  celery -A app.tasks.celery_app worker --loglevel=info --pool=solo
+  # Windows 必须加 --pool=solo，Linux 可用 --pool=prefork
+
+【前端 Vue3】
+  cd frontend
+  npm install
+  npm run dev
+
+
+================================================================================
+  六、常见环境报错排查
+================================================================================
+
+----------------------------------------
+  6.1 MySQL 连接失败：Access denied / Can't connect
+----------------------------------------
+  原因：密码不对 / 端口不对 / 服务未启动
+  排查：
+    1. 确认服务启动：sudo service mysql status / net start | findstr MySQL
+    2. 测试连接：mysql -u root -p
+    3. 检查 backend/.env 的 MYSQL_PASSWORD 是否与实际一致
+    4. MySQL 8 默认 caching_sha2_password，本项目用 mysql_native_password：
+       ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '123456';
+       FLUSH PRIVILEGES;
+
+----------------------------------------
+  6.2 Redis 连接失败：Connection refused
+----------------------------------------
+  原因：服务未启动 / 端口占用
+  排查：
+    1. redis-cli ping，应返回 PONG
+    2. Linux：sudo service redis-server status
+    3. 检查 6379 端口：lsof -i:6379 / netstat -an | findstr 6379
+
+----------------------------------------
+  6.3 MinIO 连接失败 / bucket 创建失败
+----------------------------------------
+  原因：MinIO 未启动 / 端口不对
+  排查：
+    1. 浏览器访问 http://127.0.0.1:9000，应返回 JSON
+    2. 检查 .env 的 MINIO_ACCESS_KEY / SECRET_KEY
+    3. bucket 会在后端启动时自动创建，如未创建检查日志
+
+----------------------------------------
+  6.4 Milvus-Lite 不支持 Windows
+----------------------------------------
+  报错：ImportError: cannot import name 'MilvusClient' / 平台不支持
+  解决：
+    方案1：使用 WSL2 运行项目
+    方案2：改用 Docker 版 Milvus：
+      docker run -d --name milvus -p 19530:19530 milvusdb/milvus:latest
+      .env 改：MILVUS_URI=http://127.0.0.1:19530
+      安装：pip install pymilvus（不需 milvus-lite）
+
+----------------------------------------
+  6.5 torch 安装失败 / 模型下载慢
+----------------------------------------
+  原因：torch 较大，默认从国外下载
+  解决：
+    1. torch CPU 版：
+       pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
+    2. 模型首次运行自动从 HuggingFace 下载，如下载慢可设镜像：
+       export HF_ENDPOINT=https://hf-mirror.com    # Linux
+       set HF_ENDPOINT=https://hf-mirror.com        # Windows
+    3. 模型文件会缓存在 ~/.cache/huggingface/
+
+----------------------------------------
+  6.6 Celery 任务不执行 / 一直 pending
+----------------------------------------
+  原因：Celery worker 未启动 / broker 连接失败
+  排查：
+    1. 确认 Redis 已启动
+    2. 确认 worker 终端在运行：
+       celery -A app.tasks.celery_app worker --loglevel=info --pool=solo
+    3. Windows 下不加 --pool=solo 会报 NotImplementedError
+    4. 检查 .env 的 CELERY_BROKER 是否指向可用 Redis
+
+----------------------------------------
+  6.7 transformers / CLIP 模型加载失败
+----------------------------------------
+  报错：OSError: ... not a local folder / 网络错误
+  原因：首次需联网从 HuggingFace 下载模型权重
+  解决：
+    1. 设置镜像：export HF_ENDPOINT=https://hf-mirror.com
+    2. 手动预下载：
+       python -c "from transformers import ChineseCLIPModel; ChineseCLIPModel.from_pretrained('OFA-Sys/chinese-clip-vit-base-patch16')"
+       python -c "from transformers import AutoModel; AutoModel.from_pretrained('BAAI/bge-small-zh-v1.5')"
+    3. 完全无网络环境：模型加载失败会降级为零向量，检索功能仍可运行（仅召回无效）
+
+----------------------------------------
+  6.8 npm install 失败 / 前端启动报错
+----------------------------------------
+  原因：Node.js 版本过低 / 网络问题
+  排查：
+    1. Node.js 版本要求 16+（推荐 18 LTS）
+       node --version
+    2. 使用淘宝镜像加速：
+       npm config set registry https://registry.npmmirror.com
+       npm install
+    3. 删除 node_modules 重装：
+       rm -rf node_modules package-lock.json
+       npm install
+
+================================================================================
+  环境搭建文档结束
+================================================================================
